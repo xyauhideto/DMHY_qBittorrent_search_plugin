@@ -29,7 +29,6 @@ from helpers import download_file, retrieve_url
 from novaprinter import prettyPrinter
 
 # parser
-from html.parser import HTMLParser
 from re import compile as re_compile
 
 class dmhyorg(object):
@@ -41,79 +40,37 @@ class dmhyorg(object):
         """ Downloader """
         print(download_file(info))
 
-    class dmhy_list_parser(HTMLParser):
-        """ Parser class """
-        def __init__(self, url):
-            HTMLParser.__init__(self)
-            self.url = url
-            self.current_item = None
-            self.save_item_key = None
-
-        def handle_starttag(self, tag, attrs):
-            """ Parser"s start tag handler """
-            if self.current_item:
-                params = dict(attrs)
-                if tag == "a":
-                    link = params["href"]
-                    if "/view/" in link and "target" in params:
-                        # description link
-                        self.current_item["desc_link"] = self.url+ link
-                        self.save_item_key = "name"
-                    elif link.startswith("magnet"):
-                        self.current_item["link"] = link
-                elif tag == "span" and "class" in params and params["class"].startswith("bt") and not "leech" in self.current_item:
-                    self.save_item_key = "leech" if "seeds" in self.current_item else "seeds"
-                elif tag == "td" and "link" in self.current_item and not "size" in self.current_item:
-                    self.save_item_key = "size"
-            elif tag == "tr":
-                self.current_item = {}
-                self.current_item["engine_url"] = self.url
-
-        def handle_endtag(self, tag):
-            """ Parser"s end tag handler """
-            if self.current_item and tag == "tr":
-                if all(key in self.current_item for key in ["name","link","size"]):
-                    prettyPrinter(self.current_item)
-                self.current_item = None
-
-        def handle_data(self, data):
-            """ Parser"s data handler """
-            if self.save_item_key:
-                save_item_value = data.strip()
-                if "size" == self.save_item_key:
-                    size = re_compile("([\d\.]+)(\w+)").search(save_item_value)
-                    num = float(size.group(1))
-                    unit = 2**(10*(1+'kmgtpezy'.find(size.group(2)[0].lower())))
-                    save_item_value = str(int(num * unit))
-                elif self.save_item_key in ["seeds", "leech"]:
-                    save_item_value = 0 if "-" == save_item_value else int(save_item_value)
-                self.current_item[self.save_item_key] = save_item_value
-                self.save_item_key = None
-
     # DO NOT CHANGE the name and parameters of this function
     # This function will be the one called by nova2.py
     def search(self, what, cat="all"):
         """ Performs search """
-        parser = self.dmhy_list_parser(self.url)
 
         def get_data(url):
-            highlight = re_compile("<span class=\"keyword\">([^<]+)</span>")
+            highlight = re_compile('<span class="keyword">([^<]+)</span>')
             get_next = re_compile('(?s)"fl".+href="([^"]+)">下一')
-            get_table = re_compile(
-                "(?s)<table[^<]+topic_list.+<tbody>(.*)</tbody>.*</table>")
+            get_item = re_compile('(?m)<a href="(/topics/view/[^"]+)"[^>]+>\s*([^<]*)</a>(?:\s*.*){2}(magnet:[^"]+)".*\s*.*>([\d\.]+)(\w+)</td[^/]+btl_1">([\d-]+)</span></td>\s*[^/]+bts_1">([\d-]+)<')
             html = retrieve_url(url)
             next_page = get_next.search(html)
-            table = get_table.search(html)
             # clear highlighting
-            return [table and highlight.sub(r"\1",table.group(1)),
+            return [get_item.findall(highlight.sub(r"\1",html)),
                     next_page and self.url + next_page.group(1)]
 
-        page_url = "%s/topics/list/?keyword=%s&sort_id=%d" % (
+        query = "%s/topics/list/?keyword=%s&sort_id=%d" % (
             self.url, what, self.supported_categories.get(cat, "0"))
 
-        while page_url:
-            [data,page_url] = get_data(page_url)
-            parser.feed(data)
+        while query:
+            [data,query] = get_data(query)
+            for item in data:
+                prettyPrinter({
+                    "desc_link":self.url+item[0],
+                    "name":item[1],
+                    "link":item[2],
+                    "size":str(int(float(item[3]) * 2 ** (10 * (1 + 'kmgtpezy'.find(item[4][0].lower()))))),
+                    "seeds":0 if "-" == item[5] else int(item[5]),
+                    "leech":0 if "-" == item[6] else int(item[6]),
+                    "engine_url":self.url
+                })
 
-        parser.close()
-
+if __name__ == "__main__":
+    engine = dmhyorg()
+    engine.search('conan')
