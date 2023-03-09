@@ -1,6 +1,6 @@
 
-#VERSION: 1.00
-#AUTHORS: xyau (xyauhideto@gmail.com)
+# VERSION: 2.00
+# AUTHORS: xyau (xyauhideto@gmail.com)
 
 # MIT License
 #
@@ -24,53 +24,44 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# qBT
-from helpers import download_file, retrieve_url
-from novaprinter import prettyPrinter
+try:
+	from re import findall
+except ModuleNotFoundError:
+	pass
 
-# parser
-from re import compile as re_compile
+# import qBT modules
+try:
+    from novaprinter import prettyPrinter
+    from helpers import retrieve_url
+except ModuleNotFoundError:
+    pass
 
 class dmhyorg(object):
-    url = "https://share.dmhy.org"
-    name = "DMHY"
-    supported_categories = {"all":0,"anime":2,"pictures":3,"music":4,"tv":6,"games":9}
+	url = "https://share.dmhy.org"
+	name = "DMHY"
+	supported_categories = {"all": 0, "anime": 2,
+        "pictures": 3, "music": 4, "tv": 6, "games": 9}
+	reg = '<tr\s+class="even"[\s\S]*?</td>\s+<td\s+class="title">\s+<a\s+href="([^"]+)"[^>]+>\s*([\s\S]+?)\s*<span\s+class="keyword">[\s\S]+?<td\s+nowrap="nowrap"\s+align="center">\s+<a\s+class="download-arrow arrow-magnet"\s+title="磁力下載"\s+href="([^"]+)">[^<]+</a>[\s\S]+?</td>\s+<td\s+nowrap="nowrap"\s+align="center">([^<]+)</td>[^<]+<td\s+nowrap="nowrap"\s+align="center"><span class="btl_1">(\d+)</span></td>[^<]+<td\s+nowrap="nowrap"\s+align="center"><span\s+class="bts_1">(\d+)</span></td>[^<]+<td\s+nowrap="nowrap"\s+align="center">(\d+)</td>'
 
-    def download_torrent(self, info):
-        """ Downloader """
-        print(download_file(info))
+	def get_data(self, url):
+		html = retrieve_url(url)
+		result = findall(self.reg, html)
+		data, item = [], {}
+		for v in result:
+			item = {'link': v[2], 'name': v[1], 'desc_link': v[0], 'size': v[3],
+                'seeds': v[4], 'leech': v[5], 'engine_url': self.url}
+			data.append(item)
+		return [data, len(data)]
 
-    # DO NOT CHANGE the name and parameters of this function
-    # This function will be the one called by nova2.py
-    def search(self, what, cat="all"):
-        """ Performs search """
+	def search(self, what, cat="all"):
+		page, cate = 1, self.supported_categories.get(cat, "0")
 
-        def get_data(url):
-            highlight = re_compile('<span class="keyword">([^<]+)</span>')
-            get_next = re_compile('(?s)"fl".+href="([^"]+)">下一')
-            get_item = re_compile('(?m)<a href="(/topics/view/[^"]+)"[^>]+>\s*([^<]*)</a>(?:\s*.*){2}(magnet:[^"]+)".*\s*.*>([\d\.]+)(\w+)</td[^/]+btl_1">([\d-]+)</span></td>\s*[^/]+bts_1">([\d-]+)<')
-            html = retrieve_url(url)
-            next_page = get_next.search(html)
-            # clear highlighting
-            return [get_item.findall(highlight.sub(r"\1",html)),
-                    next_page and self.url + next_page.group(1)]
-
-        query = "%s/topics/list/?keyword=%s&sort_id=%d" % (
-            self.url, what, self.supported_categories.get(cat, "0"))
-
-        while query:
-            [data,query] = get_data(query)
-            for item in data:
-                prettyPrinter({
-                    "desc_link":self.url+item[0],
-                    "name":item[1],
-                    "link":item[2],
-                    "size":str(int(float(item[3]) * 2 ** (10 * (1 + 'kmgtpezy'.find(item[4][0].lower()))))),
-                    "seeds":0 if "-" == item[5] else int(item[5]),
-                    "leech":0 if "-" == item[6] else int(item[6]),
-                    "engine_url":self.url
-                })
-
-if __name__ == "__main__":
-    engine = dmhyorg()
-    engine.search('conan')
+		while True:
+			url = "{}/topics/list/page/{}?keyword={}&sort_id={}&team_id=0&order=date-desc".format(
+			    self.url, page, what, cate)
+			[data, len] = self.get_data(url)
+			for item in data:
+				prettyPrinter(item)
+			if page >= 5 and len < 80:
+				return
+			++page
